@@ -35,19 +35,21 @@ def load_image(filepath):
 
     image = io.imread(filepath)
 
-    if image.ndim == 2:
-        image = np.repeat(image[:, :, np.newaxis], 3, axis=2)
-    elif image.ndim == 3:
+    # Normalize ndim to 3 and turn grayscale images to RGB.
+    if image.ndim == 2: # grayscale image
+        image = np.repeat(image[:, :, np.newaxis], 3, axis=2) # add a new axis and repeat 3 times
+    elif image.ndim == 3: # color image
         if image.shape[2] == 4:
-            image = image[:, :, :3]
+            image = image[:, :, :3] # remove alpha channel
         elif image.shape[2] != 3:
             raise ValueError("The image must have 1, 3, or 4 channels.")
     else:
         raise ValueError("Unsupported image dimensions.")
 
-    if np.issubdtype(image.dtype, np.integer):
+    # Normalize RGB values to lie in [0,1]
+    if np.issubdtype(image.dtype, np.integer): # Handle integer image formats such as uint8 and uint16.
         image = image.astype(np.float32) / np.iinfo(image.dtype).max
-    else:
+    else: # float32, float64
         image = np.clip(image.astype(np.float32), 0.0, 1.0)
 
     return image
@@ -89,6 +91,7 @@ def make_preview(image, max_size=(600, 450)):
         Resized preview image with preserved aspect ratio.
     """
     preview = Image.fromarray(to_uint8(image))
+    # Resize the preview using high-quality Lanczos resampling.
     preview.thumbnail(max_size, Image.Resampling.LANCZOS)
     return preview
 

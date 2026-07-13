@@ -15,10 +15,13 @@ from PIL import ImageTk
 from image_utils import load_image, make_preview, save_image
 from pyramid_codec import compress_image, decompress_image
 
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# the root folter is the grandparent of the current file
+PROJECT_ROOT = Path(__file__).resolve().parent.parent # resolve() gives the absolute path
+# folder path for input images
 IMAGE_DIR = PROJECT_ROOT / "sample_images"
+# folder path for storing reconstructed images
 OUTPUT_DIR = PROJECT_ROOT / "output"
+# folder path for storing pyramid-codec archive files
 COMPRESSED_DIR = PROJECT_ROOT / "compressed"
 
 
@@ -39,10 +42,11 @@ class PyramidCodecGUI:
         root : tkinter.Tk
             Main application window.
         """
-        self.root = root
-        self.root.title("Pyramid Codec")
-        self.root.resizable(False, False)
+        self.root = root # the root Tk window
+        self.root.title("Pyramid Codec") # window title
+        self.root.resizable(False, False) # prevent resizing
 
+        # Create the default input and output directories if they do not exist.
         IMAGE_DIR.mkdir(parents=True, exist_ok=True)
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         COMPRESSED_DIR.mkdir(parents=True, exist_ok=True)
@@ -62,19 +66,22 @@ class PyramidCodecGUI:
 
     def _build_controls(self):
         """Create the parameter controls and action buttons."""
+        
+        # Create a labeled frame for the compression settings.
+        # It spans both preview columns and stretches horizontally.
         controls = ttk.LabelFrame(self.root, text="Compression Settings")
         controls.grid(row=0, column=0, columnspan=2, padx=12, pady=10, sticky="ew")
 
         self.levels_slider = tk.Scale(
-            controls,
-            from_=1,
-            to=8,
-            resolution=1,
-            orient="horizontal",
-            label="Pyramid levels",
-            length=180,
+            controls, # the control frame is the parent of the slider, not the root window
+            from_=1, # min slider amount
+            to=8, # max slider amount
+            resolution=1, # step 
+            orient="horizontal", # alignment
+            label="Pyramid levels", # caption displayed above slider
+            length=180, # slider length in pixels
         )
-        self.levels_slider.set(5)
+        self.levels_slider.set(5) # set slider's initial value
         self.levels_slider.grid(row=0, column=0, padx=8, pady=4)
 
         self.kernel_slider = tk.Scale(
@@ -101,11 +108,15 @@ class PyramidCodecGUI:
         self.sigma_slider.set(1.0)
         self.sigma_slider.grid(row=0, column=2, padx=8, pady=4)
 
+        # Create an unlabeled frame for the action buttons.
+        # It spans both preview columns below the settings frame.        
         actions = ttk.Frame(self.root)
         actions.grid(row=1, column=0, columnspan=2, padx=12, pady=4)
 
         self.browse_button = ttk.Button(
-            actions, text="Browse Image", command=self.browse_image
+            actions, # actions frame is the parent of every button
+            text="Browse Image", # button caption
+            command=self.browse_image # name of the method called once the button is pressed
         )
         self.browse_button.grid(row=0, column=0, padx=5)
 
@@ -129,9 +140,11 @@ class PyramidCodecGUI:
         )
         self.save_output_button.grid(row=0, column=4, padx=5)
 
+        # set status text to an initial message asking the user to select an input file
         self.status_var = tk.StringVar(
             value="Select an image or a compressed archive."
         )
+        # place the status message 
         ttk.Label(self.root, textvariable=self.status_var, anchor="center").grid(
             row=2, column=0, columnspan=2, padx=12, pady=(4, 8), sticky="ew"
         )
@@ -142,11 +155,11 @@ class PyramidCodecGUI:
         source_frame.grid(row=3, column=0, padx=(12, 6), pady=(0, 12), sticky="n")
 
         output_frame = ttk.LabelFrame(self.root, text="Reconstructed Image")
-        output_frame.grid(row=3, column=1, padx=(6, 12), pady=(0, 12), sticky="n")
+        output_frame.grid(row=3, column=1, padx=(6, 12), pady=(0, 12), sticky="n") # padding on 3 sides, aligned north
 
         self.source_label = ttk.Label(
             source_frame, text="No source image selected", anchor="center", width=50
-        )
+        ) # 50 character long label
         self.source_label.pack(padx=10, pady=10)
 
         self.output_label = ttk.Label(
@@ -183,9 +196,11 @@ class PyramidCodecGUI:
         """
         pil_image = make_preview(image, max_size=(480, 380))
         tk_image = ImageTk.PhotoImage(pil_image)
+        # dynamically set attribute for source/output image
         setattr(self, reference_name, tk_image)
-        label.config(image=tk_image, text="")
-
+        # assign image and remove placeholder text
+        label.config(image=tk_image, text="") 
+        
     def browse_image(self):
         """Open a file dialog, load a color image, and show its preview."""
         filepath = filedialog.askopenfilename(
@@ -207,9 +222,11 @@ class PyramidCodecGUI:
 
         self.source_path = Path(filepath)
         self._show_preview(self.source_image, self.source_label, "source_tk_image")
-        self.status_var.set(
+        
+        # set status_var, which was passed to tk.Label object as textvariable
+        self.status_var.set( 
             f"Loaded {self.source_path.name} "
-            f"({self.source_image.shape[1]} x {self.source_image.shape[0]})."
+            f"({self.source_image.shape[1]} x {self.source_image.shape[0]})." # width x height
         )
         self._update_button_states()
 
@@ -238,7 +255,7 @@ class PyramidCodecGUI:
         if not filepath:
             return
 
-        try:
+        try: # call to codec
             information = compress_image(
                 self.source_image,
                 filepath,
@@ -282,7 +299,7 @@ class PyramidCodecGUI:
         if self.archive_path is None:
             return
 
-        try:
+        try: # call to codec
             image, metadata = decompress_image(self.archive_path)
         except (OSError, KeyError, ValueError) as error:
             messagebox.showerror("Decompression Failed", str(error))
@@ -324,7 +341,7 @@ class PyramidCodecGUI:
         if not filepath:
             return
 
-        try:
+        try: # call to image utils
             save_image(filepath, self.reconstructed_image)
         except OSError as error:
             messagebox.showerror("Unable to Save Image", str(error))

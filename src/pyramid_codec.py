@@ -36,7 +36,7 @@ def downsample_image(image, kernel):
         Anti-aliased image sampled at every second row and column.
     """
     blurred = fast_filter2d(image, kernel)
-    return blurred[::2, ::2, ...]
+    return blurred[::2, ::2, ...] # skip every second row and column.
 
 
 def expand_image(image, target_shape, kernel):
@@ -59,8 +59,8 @@ def expand_image(image, target_shape, kernel):
     numpy.ndarray
         Expanded image with exactly target_shape.
     """
-    target_shape = tuple(int(value) for value in target_shape)
-    if image.ndim != len(target_shape):
+    target_shape = tuple(int(value) for value in target_shape) # convert target shape to a regular tuple
+    if image.ndim != len(target_shape): # validate target dimensions
         raise ValueError("Input image and target shape must have equal rank.")
 
     expanded = np.zeros(target_shape, dtype=np.float32)
@@ -72,7 +72,10 @@ def expand_image(image, target_shape, kernel):
         )
 
     expanded[::2, ::2, ...] = image
-    return fast_filter2d(expanded, kernel) * 4.0
+    
+    # Gaussian filtering interpolates the inserted zeros. Multiplying by four
+    # compensates for the reduced two-dimensional sample density.
+    return fast_filter2d(expanded, kernel) * 4.0 
 
 
 def build_laplacian_pyramid(image, levels, kernel):
@@ -108,9 +111,14 @@ def build_laplacian_pyramid(image, levels, kernel):
         if min(current.shape[:2]) < 2:
             raise ValueError("Too many levels for this image.")
 
+        # smooth and downsample image
         smaller = downsample_image(current, kernel)
+        # Expand the smaller image and filter it to form an approximation
+        # of the current pyramid level.
         approximation = expand_image(smaller, current.shape, kernel)
+        # the residual image is the difference between the current image and the approximation
         residuals.append(current - approximation)
+        # do the same for the downsampled image until you reach the specified level
         current = smaller
 
     return residuals, current
@@ -138,6 +146,7 @@ def reconstruct_image(residuals, smallest, kernel):
     """
     current = np.asarray(smallest, dtype=np.float32)
 
+    # for i-th level image: G(i) = Expand(G(i+1)) + L(i)
     for residual in reversed(residuals):
         residual = np.asarray(residual, dtype=np.float32)
         current = expand_image(current, residual.shape, kernel) + residual
@@ -163,6 +172,7 @@ def quantize_residual(residual):
         Scale required for dequantization.
     """
     residual = np.asarray(residual, dtype=np.float32)
+    # scale is the largest intensity magnitude in residual image 
     scale = np.float32(np.max(np.abs(residual)))
 
     if scale == 0:
@@ -223,29 +233,39 @@ def compress_image(image, filepath, levels=5, kernel_size=5, sigma=1.0):
         Archive information and an approximate array-data compression ratio.
     """
     filepath = Path(filepath)
+    # build the Gaussian kernel and use it to build the Laplacian pyramid  
     kernel = gaussian_kernel(kernel_size, sigma)
     residuals, smallest = build_laplacian_pyramid(image, levels, kernel)
 
+    # save format version, number of levels in the Laplacian pyramid,
+    # Gaussian kernel Parameters, and the smallest downsampled image,
+    # all as np-arrays, into an archive 
     archive = {
-        "version": np.array(ARCHIVE_VERSION, dtype=np.int16),
+        "version": np.array(ARCHIVE_VERSION, dtype=np.int16), # version for our new archive format
         "levels": np.array(levels, dtype=np.int16),
         "kernel_size": np.array(kernel_size, dtype=np.int16),
         "sigma": np.array(sigma, dtype=np.float32),
         "original_shape": np.array(image.shape, dtype=np.int32),
-        "smallest": np.round(np.clip(smallest, 0.0, 1.0) * 255.0).astype(np.uint8),
+        "smallest": np.round(np.clip(smallest, 0.0, 1.0) * 255.0).astype(np.uint8), # use one byte per pixel to save space
     }
 
+    # add quantized residuals of the Laplacian pyramid and their scale to the archive
     for index, residual in enumerate(residuals):
         quantized, scale = quantize_residual(residual)
         archive[f"residual_{index}"] = quantized
         archive[f"scale_{index}"] = np.array(scale, dtype=np.float32)
 
+    # write the archive into a binary output file )
     with filepath.open("wb") as output_file:
-        np.savez_compressed(output_file, **archive)
+        # Dictionary unpacking turns each key into a named array in the archive.
+        np.savez_compressed(output_file, **archive) 
 
+    # get the original image's array size
     original_bytes = np.asarray(image, dtype=np.float32).nbytes
+    # get the size of our newly saved archive  
     archive_bytes = filepath.stat().st_size
 
+    # compression_ratio = original_bytes / archive_bytes
     return {
         "path": filepath,
         "original_bytes": original_bytes,
@@ -279,25 +299,32 @@ def load_compressed_image(filepath):
     """
     filepath = Path(filepath)
 
-    with np.load(filepath, allow_pickle=False) as archive:
+    with np.load(filepath, allow_pickle=False) as archive: # open archive of np arrays from filepath
         version = int(archive["version"])
-        if version != ARCHIVE_VERSION:
+        if version != ARCHIVE_VERSION: # verify archive version
             raise ValueError(f"Unsupported archive version: {version}")
 
-        levels = int(archive["levels"])
+        # get the number of levels in Laplacian pyramid
+        levels = int(archive["levels"]) 
+        # get the Gaussian kernel parameters
         kernel_size = int(archive["kernel_size"])
         sigma = float(archive["sigma"])
+        # get original image dimensions 
         original_shape = tuple(int(v) for v in archive["original_shape"])
 
+        # dequantize residual images
         residuals = []
         for index in range(levels):
             quantized = archive[f"residual_{index}"]
             scale = float(archive[f"scale_{index}"])
             residuals.append(dequantize_residual(quantized, scale))
 
+        # get the smallest image
         smallest = archive["smallest"].astype(np.float32) / 255.0
 
+    # build the Guassian kernel of specified parameters to return
     kernel = gaussian_kernel(kernel_size, sigma)
+    # pack metadata in a dictionary to return
     metadata = {
         "version": version,
         "levels": levels,
